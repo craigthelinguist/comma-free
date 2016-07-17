@@ -1,25 +1,31 @@
 
 import Control.Monad
-import Data.Set (Set)
-import qualified Data.Set as Sets
+import Data.List
 import Text.Read
 
 {- Check if a set of Strings is comma-free.
    If the set of strings is comma-free, return Nothing.
    Otherwise return an example s which violates the comma-free property.
 -}
-commaFreeViolation :: Sets.Set String -> Maybe (String, String)
-commaFreeViolation wordSet =
+commaFreeViolation :: [String] -> Maybe (String, String, String)
+commaFreeViolation words =
+    -- Figure out every concatenated pair of words.
+    let concatenatedPairs = allConcatenatedPairs words
+    -- Map each concatenated pair to (the pair of words, the substrings in concatenation)
+        allSubstrs = map (\c -> (unconcat c, allSubstrings c)) concatenatedPairs
+    -- Map each (pair,substrings) to (pair, substrings in the code)
+        conflicts = map (\(pair,substrs) -> (pair, intersect substrs words)) allSubstrs
+    -- Get the first conflict, if there is one.
+    in getConflict conflicts
 
-    -- Find the substrings of the concatenation of every pair of words. If any of those substrings
-    -- belongs to the set of codewords then we have a conflict.
-    let words = Sets.toList wordSet
-        pairsOfWords = allConcatenatedPairs words
-        allSubstrs = Sets.fromList . concat $ (map (\w -> allSubstrings w) pairsOfWords)
-        conflicts = Sets.toList $ Sets.intersection allSubstrs wordSet
-
-     -- If there was a conflict, return the conflicting pair of words.
-     in if null conflicts then Nothing else Just (unconcat (head conflicts))
+{- From a list of possible conflicts, extract the first.
+   The input is a list of ((String,String), [String])
+      (String,String) is a pair of words from the code.
+      [String] is the list of substrings in the concatenated words, which are also in the code. -}
+getConflict :: [  ((String,String), [String])  ] -> Maybe (String, String, String)
+getConflict [] = Nothing
+getConflict ( ( _   , []       ) : rest) = getConflict rest
+getConflict ( ((a,b), conflicts) : _   ) = Just (a,b,(head conflicts))
 
 {- From a concatenation of two words from a block-code, extract the two words. -}
 unconcat :: String -> (String, String)
@@ -69,19 +75,20 @@ getWordOfLength n = do
             return line
 
 {- Ask the user for codewords, checking if each new one violates the comma-free property. -}
-checkCodewords :: Int -> Sets.Set String -> IO ()
+checkCodewords :: Int -> [String] -> IO ()
 checkCodewords wordLen words = forever $ do
     w <- getWordOfLength wordLen
-    let words2 = (Sets.insert w words) in
-        case commaFreeViolation words2 of
-            Nothing -> checkCodewords wordLen words2
-            Just (s1,s2) -> do
-                putStrLn $ "Conflict between " ++ s2 ++ " and " ++ s1
-                checkCodewords wordLen words
+    if elem w words then checkCodewords wordLen words
+    else let words2 = (w:words) in
+            case commaFreeViolation words2 of
+                Nothing -> checkCodewords wordLen words2
+                Just (s1, s2, s3) -> do
+                    putStrLn $ "The pair " ++ s1 ++ "|" ++ s2 ++ " conflicts with " ++ s3
+                    checkCodewords wordLen words
 
 main :: IO ()
 main = do
     putStrLn "Enter the length of code-words."
     n <- getLineInt
     putStrLn $ "Enter some words of length " ++ (show n) ++ "."
-    checkCodewords n Sets.empty
+    checkCodewords n []
